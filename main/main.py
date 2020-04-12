@@ -1,6 +1,7 @@
 from nes_py.wrappers import JoypadSpace
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import FloatTensor, LongTensor, cat, zeros
@@ -21,8 +22,9 @@ env.seed(SEED)
 state_size = (4, 84, 84)
 actions_size = env.action_space.n
 model: DQN = DQN(state_size, actions_size, MEMORY_CAPACITY)
-trial_results = []
+rewards = list()
 steps_done = 0
+start_time = time.time()
 
 
 def run_trial(i):
@@ -31,9 +33,9 @@ def run_trial(i):
     total_reward = 0
     step = 0
     while True:
-        # env.render()
+        env.render()
         action = model.run(state, steps_done)
-        next_state, reward, done, _ = env.step(action)
+        next_state, reward, done, info = env.step(action)
         steps_done += 1
 
         model.add((state, next_state, action, reward, done))
@@ -43,11 +45,18 @@ def run_trial(i):
         state = next_state
         step += 1
 
-        if done:
+        if done or info['flag_get']:
             print("Trial {0} finished after {1} steps"
                   .format(i, step))
-            trial_results.append(step)
-            plot_durations()
+            rewards.append(total_reward / step)
+            if i % 100 == 0:
+                print('Episode {e} - +'
+                      'Frame {f} - +'
+                      'Frames/sec {fs} - +'
+                      'Mean Reward {r}'.format(e=i,
+                                               f=model.step,
+                                               fs=np.round((model.step - steps_done) / (time.time() - start_time)),
+                                               r=np.mean(rewards[-100:])))
             break
 
 
@@ -57,26 +66,9 @@ def plot_results():
     plt.title('Training...')
     plt.xlabel('Trial')
     plt.ylabel('Steps')
-    plt.plot(np.array(trial_results))
+    plt.plot(np.array(rewards))
 
     plt.pause(0.001)
-
-
-def plot_durations():
-    plt.figure(2)
-    plt.clf()
-    durations_t = FloatTensor(trial_results)
-    plt.title('Training...')
-    plt.xlabel('Episode')
-    plt.ylabel('Duration')
-    plt.plot(durations_t.numpy())
-    # take 100 episode averages and plot them too
-    if len(durations_t) >= 100:
-        means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
-        means = cat((zeros(99), means))
-        plt.plot(means.numpy())
-
-    plt.pause(0.001)  # pause a bit so that plots are updated
 
 
 for _ in range(TRIALS):
@@ -87,3 +79,5 @@ env.close()
 plot_results()
 plt.ioff()
 plt.show()
+
+np.save('rewards.npy', rewards)
